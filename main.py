@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from PIL import Image
 import PyPDF2
 import google.generativeai as genai
-from openai import OpenAI
+from openai import OpenAI  # Vẫn cần cho Perplexity
 import cohere
 
 load_dotenv()
@@ -42,16 +42,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ===== HÀM ĐỌC API KEY (MỚI) =====
 def get_api_key(key_name):
     """Đọc API key từ Streamlit secrets (cloud) hoặc .env (local)"""
     try:
-        # Ưu tiên đọc từ Streamlit secrets khi deploy
         if key_name in st.secrets:
             return st.secrets[key_name]
     except Exception:
         pass
-    # Nếu không có, đọc từ .env khi chạy local
     return os.getenv(key_name)
 
 
@@ -81,34 +78,6 @@ def chat_gemini(api_key, prompt, context_data, is_image=False):
         else:
             response = model.generate_content(f"Context:\n{context_data}\n\nQuestion: {prompt}")
         return response.text
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-
-def chat_gpt(api_key, prompt, context_data, is_image=False):
-    client = OpenAI(api_key=api_key)
-    messages = []
-    if is_image:
-        messages = [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{context_data}"}}
-            ]
-        }]
-    else:
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant analyzing documents."},
-            {"role": "user", "content": f"Document content:\n{context_data}\n\nQuestion: {prompt}"}
-        ]
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            max_tokens=1000
-        )
-        return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -165,20 +134,19 @@ def chat_cohere(api_key, prompt, context_data, is_image=False):
 with st.sidebar:
     st.title("Cấu Hình & Tài Liệu")
 
+    # BỎ "OpenAI GPT-4o" khỏi danh sách
     model_choice = st.selectbox(
         "Chọn AI Model",
         [
             "Google Gemini",
-            "OpenAI GPT-4o",
             "Perplexity Sonar",
             "Cohere Command-A"
         ],
         index=0
     )
 
-    # ===== ĐỌC API KEYS (ĐÃ SỬA) =====
+    # BỎ openai_key
     gemini_key = get_api_key("GOOGLE_API_KEY")
-    openai_key = get_api_key("OPENAI_API_KEY")
     perplexity_key = get_api_key("PERPLEXITY_API_KEY")
     cohere_key = get_api_key("COHERE_API_KEY")
 
@@ -188,16 +156,11 @@ with st.sidebar:
             st.success("Gemini Key đã tải")
         else:
             st.error("Thiếu GOOGLE_API_KEY")
-    elif model_choice == "OpenAI GPT-4o":
-        if openai_key:
-            st.success("OpenAI Key đã tải")
-        else:
-            st.error("Thiếu OPENAI_API_KEY")
     elif model_choice == "Perplexity Sonar":
         if perplexity_key:
             st.success("Perplexity Key đã tải")
         else:
-            st.error("Thiếu PERPLEXITY_API_KEY")
+            st.error("❌ Thiếu PERPLEXITY_API_KEY")
         st.info("Perplexity chỉ hỗ trợ file PDF")
     else:  # Cohere
         if cohere_key:
@@ -248,27 +211,22 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
                 response_text = ""
                 file_type = uploaded_file.type
 
-                # Chọn API key tương ứng
+                # Chọn API key tương ứng (BỎ phần OpenAI)
                 if model_choice == "Google Gemini":
                     active_key = gemini_key
-                elif model_choice == "OpenAI GPT-4o":
-                    active_key = openai_key
                 elif model_choice == "Perplexity Sonar":
                     active_key = perplexity_key
                 else:  # Cohere
                     active_key = cohere_key
 
                 if not active_key:
-                    response_text = "Lỗi: Không tìm thấy API Key"
+                    response_text = " Lỗi: Không tìm thấy API Key"
                 else:
                     if "image" in file_type:
                         img_obj = Image.open(uploaded_file)
 
                         if model_choice == "Google Gemini":
                             response_text = chat_gemini(active_key, prompt, img_obj, is_image=True)
-                        elif model_choice == "OpenAI GPT-4o":
-                            base64_img = image_to_base64(img_obj)
-                            response_text = chat_gpt(active_key, prompt, base64_img, is_image=True)
                         elif model_choice == "Perplexity Sonar":
                             response_text = chat_perplexity(active_key, prompt, None, is_image=True)
                         else:  # Cohere
@@ -279,8 +237,6 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
                         if pdf_txt:
                             if model_choice == "Google Gemini":
                                 response_text = chat_gemini(active_key, prompt, pdf_txt, is_image=False)
-                            elif model_choice == "OpenAI GPT-4o":
-                                response_text = chat_gpt(active_key, prompt, pdf_txt, is_image=False)
                             elif model_choice == "Perplexity Sonar":
                                 response_text = chat_perplexity(active_key, prompt, pdf_txt, is_image=False)
                             else:  # Cohere
