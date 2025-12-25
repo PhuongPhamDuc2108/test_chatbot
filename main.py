@@ -7,7 +7,7 @@ from PIL import Image
 import PyPDF2
 import google.generativeai as genai
 from openai import OpenAI
-import cohere  # Thêm thư viện Cohere
+import cohere
 
 load_dotenv()
 
@@ -40,6 +40,19 @@ st.markdown("""
     footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
+
+
+# ===== HÀM ĐỌC API KEY (MỚI) =====
+def get_api_key(key_name):
+    """Đọc API key từ Streamlit secrets (cloud) hoặc .env (local)"""
+    try:
+        # Ưu tiên đọc từ Streamlit secrets khi deploy
+        if key_name in st.secrets:
+            return st.secrets[key_name]
+    except Exception:
+        pass
+    # Nếu không có, đọc từ .env khi chạy local
+    return os.getenv(key_name)
 
 
 def get_pdf_text(pdf_file):
@@ -125,20 +138,17 @@ def chat_perplexity(api_key, prompt, context_data, is_image=False):
         return f"Error: {str(e)}"
 
 
-# HÀM MỚI: Chat với Cohere
 def chat_cohere(api_key, prompt, context_data, is_image=False):
-    co = cohere.ClientV2(api_key=api_key)  # Khởi tạo Cohere client
+    co = cohere.ClientV2(api_key=api_key)
 
-    # Cohere KHÔNG hỗ trợ xử lý ảnh qua API
     if is_image:
         return "Cohere API không hỗ trợ phân tích ảnh. Vui lòng chọn model khác hoặc upload file PDF."
 
     try:
-        # Tạo message với context
         full_message = f"Document content:\n{context_data}\n\nQuestion: {prompt}"
 
         response = co.chat(
-            model="command-a-03-2025",  # Model tốt nhất của Cohere
+            model="command-a-03-2025",
             messages=[
                 {
                     "role": "user",
@@ -147,7 +157,6 @@ def chat_cohere(api_key, prompt, context_data, is_image=False):
             ]
         )
 
-        # Trả về text từ response
         return response.message.content[0].text
     except Exception as e:
         return f"Error: {str(e)}"
@@ -156,46 +165,46 @@ def chat_cohere(api_key, prompt, context_data, is_image=False):
 with st.sidebar:
     st.title("Cấu Hình & Tài Liệu")
 
-    # Thêm Cohere vào danh sách
     model_choice = st.selectbox(
         "Chọn AI Model",
         [
             "Google Gemini",
             "OpenAI GPT-4o",
             "Perplexity Sonar",
-            "Cohere Command-R+"  # Thêm option mới
+            "Cohere Command-A"
         ],
         index=0
     )
 
-    gemini_key = os.getenv("GOOGLE_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-    perplexity_key = os.getenv("PERPLEXITY_API_KEY")
-    cohere_key = os.getenv("COHERE_API_KEY")  # Thêm key mới
+    # ===== ĐỌC API KEYS (ĐÃ SỬA) =====
+    gemini_key = get_api_key("GOOGLE_API_KEY")
+    openai_key = get_api_key("OPENAI_API_KEY")
+    perplexity_key = get_api_key("PERPLEXITY_API_KEY")
+    cohere_key = get_api_key("COHERE_API_KEY")
 
     # Kiểm tra API key
     if model_choice == "Google Gemini":
         if gemini_key:
             st.success("Gemini Key đã tải")
         else:
-            st.error("Thiếu GOOGLE_API_KEY trong .env")
+            st.error("Thiếu GOOGLE_API_KEY")
     elif model_choice == "OpenAI GPT-4o":
         if openai_key:
             st.success("OpenAI Key đã tải")
         else:
-            st.error("Thiếu OPENAI_API_KEY trong .env")
+            st.error("Thiếu OPENAI_API_KEY")
     elif model_choice == "Perplexity Sonar":
         if perplexity_key:
             st.success("Perplexity Key đã tải")
         else:
-            st.error("Thiếu PERPLEXITY_API_KEY trong .env")
+            st.error("Thiếu PERPLEXITY_API_KEY")
         st.info("Perplexity chỉ hỗ trợ file PDF")
     else:  # Cohere
         if cohere_key:
             st.success("Cohere Key đã tải")
         else:
-            st.error("Thiếu COHERE_API_KEY trong .env")
-        st.info("Cohere chỉ hỗ trợ file PDF, không hỗ trợ ảnh")
+            st.error("Thiếu COHERE_API_KEY")
+        st.info("Cohere chỉ hỗ trợ file PDF")
 
     st.divider()
 
@@ -206,7 +215,7 @@ with st.sidebar:
         if "image" in file_type:
             image = Image.open(uploaded_file)
             st.image(image, caption="Ảnh xem trước", use_container_width=True)
-            if model_choice in ["Perplexity Sonar", "Cohere Command-R+"]:
+            if model_choice in ["Perplexity Sonar", "Cohere Command-A"]:
                 st.warning("Model này không hỗ trợ ảnh")
         elif "pdf" in file_type:
             st.info(f"File PDF: {uploaded_file.name}")
@@ -250,7 +259,7 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
                     active_key = cohere_key
 
                 if not active_key:
-                    response_text = "Lỗi: Không tìm thấy API Key trong file .env"
+                    response_text = "Lỗi: Không tìm thấy API Key"
                 else:
                     if "image" in file_type:
                         img_obj = Image.open(uploaded_file)
@@ -277,7 +286,7 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
                             else:  # Cohere
                                 response_text = chat_cohere(active_key, prompt, pdf_txt, is_image=False)
                         else:
-                            response_text = " Không đọc được text từ PDF (có thể là file scan)."
+                            response_text = "Không đọc được text từ PDF (có thể là file scan)."
 
                 st.markdown(response_text)
                 st.session_state.messages.append({"role": "assistant", "content": response_text})
